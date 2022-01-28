@@ -83,7 +83,7 @@ class Runner(object):
             for batch in dataloader:
                 batch = batch.to(self.device)
                 scores, targets, edge_sigmas = model(batch)
-                loss = model(scores, targets, edge_sigmas)
+                loss = self.loss_fn(scores, targets, edge_sigmas)
                 eval_losses.append(loss.item())
             average_loss = sum(eval_losses) / len(eval_losses)
 
