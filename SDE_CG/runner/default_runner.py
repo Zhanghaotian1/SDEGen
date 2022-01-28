@@ -70,32 +70,13 @@ class Runner(object):
                         if isinstance(v, torch.Tensor):
                             state[k] = v.to(self.device)
 
-    def evaluate(self, split, verbose=0):
-        if split not in ['train', 'val', 'test']:
-            raise ValueError('split should be either val, or test.')
-        if split == 'val':
-            dataloader = DataLoader(self.val_set, batch_size=self.config.train.batch_size, \
-                                    shuffle=False)
-            model = self.model
-            model.eval()
-            eval_start = time()
-            eval_losses = []
-            for batch in dataloader:
-                batch = batch.to(self.device)
-                scores, targets, edge_sigmas = model(batch)
-                loss = self.loss_fn(scores, targets, edge_sigmas)
-                eval_losses.append(loss.item())
-            average_loss = sum(eval_losses) / len(eval_losses)
-
-            if verbose:
-                print('Evaluate %s Loss: %.5f | Time: %.5f' % (split, average_loss, time() - eval_start))
-            return average_loss
-
     def train(self, verbose=1):
         train_start = time()
         num_epochs = self.config.train.epochs
-        dataloader = DataLoader(self.train_set, batch_size=self.config.train.batch_size,
+        train_dataloader = DataLoader(self.train_set, batch_size=self.config.train.batch_size,
                                 shuffle=self.config.train.shuffle,drop_last=False)
+        val_dataloader = DataLoader(self.val_set, batch_size=self.config.train.batch_size, \
+                                shuffle=False,drop_last=False)
         model = self.model
         loss_fn = self.loss_fn
         train_losses = []
@@ -109,28 +90,39 @@ class Runner(object):
             epoch_start = time()
             batch_losses = []
             batch_cnt = 0
-            for batch in dataloader:
+            for batch in train_dataloader:
                 batch_cnt += 1
-            batch = batch.to(self.device)
-            scores, targets, edge_sigmas = model(batch)
-            loss = loss_fn(scores, targets, edge_sigmas)
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-            batch_losses.append(loss.item())
-
-            if batch_cnt % self.config.train.log_interval == 0 or (epoch == 0 and batch_cnt <= 10):
-                print('Epoch: %d | Step: %d | loss: %.5f | Lr: %.5f' % \
-                      (epoch + start_epoch, batch_cnt, batch_losses[-1], self.optimizer.param_groups[0]['lr']))
+                batch = batch.to(self.device)
+                scores, targets, edge_sigmas = model(batch)
+                loss = loss_fn(scores, targets, edge_sigmas)
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+                batch_losses.append(loss.item())
+                if batch_cnt % self.config.train.log_interval == 0 or (epoch == 0 and batch_cnt <= 10):
+                    print('Epoch: %d | Step: %d | loss: %.5f | Lr: %.5f' % \
+                          (epoch + start_epoch, batch_cnt, batch_losses[-1], self.optimizer.param_groups[0]['lr']))
             average_loss = sum(batch_losses) / len(batch_losses)
             train_losses.append(average_loss)
             if verbose:
                 print('Epoch: %d | Train Loss: %.5f | Time: %.5f' % (
                 epoch + start_epoch, average_loss, time() - epoch_start))
-            average_eval_loss = self.evaluate('val', verbose=1)
-            val_losses.append(average_eval_loss)
+
+            model.eval()
+            eval_start = time()
+            eval_losses = []
+            for batch in val_dataloader:
+                batch = batch.to(self.device)
+                scores, targets, edge_sigmas = model(batch)
+                loss = loss_fn(scores, targets, edge_sigmas)
+                eval_losses.append(loss.item())
+            average_loss = sum(eval_losses) / len(eval_losses)
+            if verbose:
+                print('Evaluate %s Loss: %.5f | Time: %.5f' % ('val', average_loss, time() - eval_start))
+
+            val_losses.append(average_loss)
             if self.config.train.scheduler.type == "plateau":
-                self.scheduler.step(average_eval_loss)
+                self.scheduler.step(average_loss)
             else:
                 self.scheduler.step()
             if val_losses[-1] < best_loss:
