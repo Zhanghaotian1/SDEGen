@@ -68,7 +68,7 @@ class Runner(object):
                 for state in self.optimizer.state.values():
                     for k, v in state.items():
                         if isinstance(v, torch.Tensor):
-                            state[k] = v.to(device)
+                            state[k] = v.to(self.device)
 
     def evaluate(self, split, verbose=0):
         if split not in ['train', 'val', 'test']:
@@ -82,7 +82,7 @@ class Runner(object):
             eval_losses = []
             for batch in dataloader:
                 batch = batch.to(self.device)
-                scores, targets, edge_sigmas = score_model_discretized(batch)
+                scores, targets, edge_sigmas = model(batch)
                 loss = loss_fn_discretized(scores, targets, edge_sigmas)
                 eval_losses.append(loss.item())
             average_loss = sum(eval_losses) / len(eval_losses)
